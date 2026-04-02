@@ -404,3 +404,15 @@ global
 ## Questions for discussions
 
 1)  For identification of clusters (DBScan) are you happy to use the 2.5km threshold or any reason to be finer or coarser scale. Note: we have the option to remove locations with poor accuracy metrics.
+
+
+
+# 
+# ### References
+# 
+# -   Packages: Estimate Kernel home range Utilization Distribution Using adehabitatHR [(Calenge et al. 2011)](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf)
+# -   [KDE]("http://www.spatialecology.com/gme/kde.htm")
+# -   https://www.ckwri.tamuk.edu/sites/default/files/publication/pdfs/2017/leonard_analyzing_wildlife_telemetry_data_in_r.pdf
+# -   Seaman, D. E., Millspaugh, J. J., Kernohan, B. J., Brundige, G. C., Raedeke, K. J., & Gitzen, R. A. (1999). Effects of sample #size on kernel home range estimates. The journal of wildlife management, 739-747.
+# -   Kernohan, B. J., R. A. Gitzen, and J. J. Millspaugh. 2001. Analysis of animal space use and movements. Pages 125--166 in J. J. #Millspaugh and J. M. Marzluff, editors. Radio tracking and animal populations. Academic Press, San Diego, CA, USA
+# -   Hemson, G., Johnson, P., South, A., Kenward, R., Ripley, R., & MACDONALD, D. (2005). Are kernels the mustard? Data from global positioning system (GPS) collars suggests problems for kernel home‐range analyses with least‐squares cross‐validation. Journal of Animal Ecology, 74(3), 455-463

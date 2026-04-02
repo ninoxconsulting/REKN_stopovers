@@ -1,0 +1,423 @@
+---
+title: "Delaware Bay Test Summary"
+format: docx
+editor: visual
+---
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+
+library(fs)
+library(dplyr)
+library(sf)
+library(lubridate)
+library("rnaturalearth")
+library("rnaturalearthdata")
+#install.packages("fpc")
+#install.packages("dbscan")
+library(fpc)
+library(dbscan)
+library(ggplot2)
+
+```
+
+## Red Knot Stopover locations
+
+To better understand Red Knot migration and stopover locations we used high precision GPS data locations compiled from 300 individual GPS/satellite tags to identify and characterize stopovers and migration routes.
+
+### 1.GPS/satellite data
+
+Location and deployment data was obtained from 300 individual Red Knot *rufa* *subspecies*. This data was reviewed to remove spatial outliers and erroneous locations, such as those well beyond the flight path of the individual. Data filtering and QA was completed using [R coding](https://github.com/ninoxconsulting/REKN_gps) and QGIS (version 3.28.11).
+
+### 2. Methodology
+
+We expanded on initial testing conducted by Theo Diehl and Stephanie Feigin to standardize and refine the process to enable transparent and repeatable method to be rolled out to multiple individuals.
+
+#### 2.1 GPS data preprocessing
+
+All GPS/satellite data was downloaded in .csv format along with detailed reference data. This was provided by G.Perkins as part of ongoing work with US F&W to compile existing tagged Red Knot information.
+
+Data was filtered to include individuals from rufa subpopulations who had recorded a movement away from their initial deployment location. This reduced the error of inclusion of short-lived tags, tags that were malfunctioning or tags that had either dropped off their birds or the bird had died.
+
+Data was converted to a spatial format (using the sf package) and transformed to a equidistant global projection [(ESPG: 4087)](https://spatialreference.org/ref/epsg/4087/). This projection enables distance calculations as it is known as an equal area projection, hence it provides a more accurate platform on which to compare distance between points on any point on the globe.
+
+#### 2.2 Identify Stopover Locations
+
+We applied a density based clustering algorith (DBScan) which is used to identify clusters of any shape in data sets that contain noise and outliers ( Ester et al. 1996). The advantage of this method over more traditional clustering (i.e. K-means clustering), is that the number of clusters does not need to be defined aprioir, clusters can be non-circular, and outliers are identified. This is well suited to Red Knot GPS/satellite data which can have multiple stopovers in close proximity and where outliers are expected due to spatial precision variability.
+
+In the example below we show how the dbscan is used to identify clustered locations for one tag (id = 260808) within Delaware Bay. This bird was tagged in Avalon in October 2024.
+
+As a test we will focus only on Delaware Bay and revise methodology as we expand to broader stopover locations.
+
+```{r, echo = FALSE, warning=FALSE}
+dbi <- read.csv(path("01_raw_data", "test_db_locations.csv"))
+
+data <- dbi |> 
+  select(-tag.id)
+
+dbs2500 <- dbscan(data, 2500, MinPts = 5)
+dbs5000 <- dbscan(data, 5000, MinPts = 5)
+#method = c("hybrid", "raw", "dist")
+
+## Remove the points that are outside the main clusters 
+## add the cluster number back to full dataset and filter out
+db1_all <- dbi |> 
+  mutate(cluster_2500 = dbs2500$cluster) |> 
+  mutate(eps = 2500)
+
+db1_all1 <- dbi |>  
+   mutate(cluster_2500 = dbs5000$cluster) |> 
+    mutate(eps = 5000)
+
+dball <- bind_rows(db1_all, db1_all1)
+
+dbisf<- st_as_sf(dball, coords = c("X", "Y"), crs = 4087)
+  
+#dbisf <- dbisf |> 
+#  filter(cluster !=0)
+
+#plot(dbisf)
+
+# Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+Americas <- world %>% 
+  dplyr::filter(region_un == "Americas")%>% 
+  select(admin)
+
+# entire north America 
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  #geom_sf(data = all_seasons, aes(colour = id), alpha = 0.1, colour = "dark blue") +
+  geom_sf(data = dbisf, aes(colour = cluster_2500), size = 1.2, alpha = 0.6) +
+  #facet_wrap(~movement_dir)+
+  # geom_point(ru, aes(x = lng, y = lat), size = 4) +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  #coord_sf(xlim = c(-130, -40), ylim = c(10, 80), expand = FALSE)+
+  scale_colour_viridis_c() +
+  #coord_sf() +
+  facet_wrap(vars(eps)) +
+  theme_bw()+
+  labs(title = paste0("Red Knot distance threshold (tag = 260808)"))+
+  guides(col= guide_legend(title= "Clusters"))+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+#global
+
+```
+
+We can review the locations for this individual and also calculate the distance between each points. The figure below shows all locations for tag.id = 260808 within the Delaware Bay region.
+
+```{r, echo = FALSE, fig.align='center', fig.width=5, fig.height=5}
+
+# Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+Americas <- world %>% 
+  dplyr::filter(region_un == "Americas")%>% 
+  select(admin)
+
+# entire north America 
+global_basic <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  #geom_sf(data = all_seasons, aes(colour = id), alpha = 0.1, colour = "dark blue") +
+  geom_sf(data = dbisf, , size = 1.2, alpha = 0.6,colour = "dark blue") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  scale_colour_viridis_c() +
+  theme_bw()+
+  labs(title = paste0("Red Knot Delaware Bay locations (tag = 260808)"))+
+ # guides(col= guide_legend(title= "Clusters"))+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_basic
+
+```
+
+We can quantify the distance between each point and look for obvious thresholds which might help inform the parameters for where we can to set "stopover" clusters. In the figure below we have two thresholds identified, 5000m and 2500m.
+
+```{r, echo = FALSE, fig.width = 5, fig.height=4, fig.align='centre'}
+dbscan::kNNdistplot(data, k =  5)
+abline(h = 5000, lty = 2)
+abline(h = 2500, lty = 2)
+
+```
+
+We now run the density clustering algorithm. This requires two input parameters 1) minimum number of points for a cluster and 2) the distance threshold (eps) for points to be considered neighbors.
+
+From a review of the figures above and literature we tested two distance threshold thresholds; 1) 2500m and 2) 5000m. Clusters listed as zero (0) are identified as outliers. We can see in the figure below that a smaller threshold distance results in identification of more clusters. This might be helpful in identifying sub locations within a broader stopover location.
+
+```{r fig.height= 6, fig.width=8, echo =FALSE, fig.align='centre'}
+global
+```
+
+Once we have identified the outliers we can remove these from the dataset resulting in only clustered locations
+
+<br> <br>
+
+#### 2.3 Kernal Density Estimates (kde)
+
+Kernel Density Estimates (kde) are a popular method to estimate the distribution of data, hence are used to estimate home ranges. Calculations for KDE require consideration of the mathematical method to describe the density function. A detailed description of the parameters can be found [here](http://www.spatialecology.com/gme/kde.htm).
+
+KDEs are very sensitive to input parameters, specifically the bandwidth (h) which determines the [smoothing parameter](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf). H parameters can be estimated using three methods:
+
+-   a reference bandwidth (h = σ × n \^−1/6), however this is generally an overestimate of the range, and is not suitable for multi-modal distributions.
+
+-   Least Square Cross Validation (LSCV), which minimizes the difference in volume between the true UD and the estimates UD.
+
+-   A subjective visual choice for the smoothing parameter, based on successive trials (Silverman, 1986; Wand & Jones 1995).
+
+Other parameters include:
+
+-   Kernel Type: The type of kernel is limited to Gaussian (bivariate normal), quadratic or normal. We used the bivariate normal model as default.
+
+-   Grid/extent: These determines the area or extent over which the home range will be estimated. This is a mix of fine scale and time consuming processing and faster blocky resolution over a continuous surface. As a rule of thumb, Geospatial Modelling Environment program (GME) formally Hawth's tools suggest: take the square root of the x or y variance value (whichever is smaller) and divide by 5 or 10 (I usually round to the nearest big number - so 36.7 becomes 40). Before using this rule of thumb value calculate how many cells this will result in for the output (take the width and height of you input points, divide by the cell size, and multiply the resulting numbers together). If you get a value somewhere between 1-20 million, then you have a reasonable value.
+
+<br>
+
+We can review some of these various outputs to determine how the variabilites in parameters impact the projected home range for our Red Knot example tag. This is supported by the literature (Hemson et al. 2005; Calenge et al. 2011).
+
+It is also possible to run KDE with set barriers and boundaries.
+
+#####  kde: h reference parameter
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+## Generate kernal density ####
+# library(sf)
+library(mapview)
+library(adehabitatHR)
+library(sp)
+
+
+# #### 3.1 kde: h reference parameter
+dbisfgeo <- dbisf |>  
+  dplyr::select(tag.id) |>
+  as("Spatial")
+
+# # define the parameters (h, kern, grid, extent) 
+kde_href  <- kernelUD(dbisfgeo, h = "href", kern = c("bivnorm"), grid = 500, extent = 2)
+
+# kde_href
+# From this object (**Utilization distribution of several Animals**) we can extract the vertices or polygons which define the percentage we wish to include.
+# 
+# ```{r}
+ ver95 <- getverticeshr(kde_href,95) # get vertices for home range
+ ver95_sf <- st_as_sf(ver95)         # convert to sf object 
+   
+ ver75 <- getverticeshr(kde_href,75)
+ ver75_sf <- st_as_sf(ver75 )
+   
+ ver50 <- getverticeshr(kde_href,50)
+ ver50_sf<- st_as_sf(ver50)
+  
+# # plot the outputs 
+ # mapview(ver50_sf, zcol = "id") 
+ # mapview (ver75_sf, zcol = "id") 
+ # mapview (ver95_sf, zcol = "id")
+ #  
+ # plot(st_geometry(ver95_sf),col = "yellow") 
+ # plot(st_geometry(ver75_sf),col = "blue", add = TRUE)
+ # plot(st_geometry(ver50_sf),col = "purple", add = TRUE)
+ # plot(dbisfgeo, pch = 1, size = 0.5, add = TRUE)     # Add points 
+
+# entire north America 
+global_href <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = ver95_sf, alpha = 0.4, fill = "yellow")+
+  geom_sf(data = ver75_sf, alpha = 0.4, fill = "dark blue")+
+  geom_sf(data = ver50_sf, alpha = 0.4, fill = "purple")+
+  #geom_sf(data = dbisf, , size = 1, alpha = 0.2,colour = "grey") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  #scale_colour_viridis_c() +
+  theme_bw()+
+  labs(title = paste0("KDE - h ref"))+
+ # guides(col= guide_legend(title= "Clusters"))+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_href
+ 
+```
+
+##### kde: Least Squares Cross Validation (lscv) method.
+
+```{r, echo = FALSE,warning=FALSE, message=FALSE}
+ 
+# #### 3.2 kde: Least Squares Cross Validation (lscv) method.
+# 
+kde_lscv  <- kernelUD(dbisfgeo, h = "LSCV", kern = c("bivnorm"), grid = 500, extent = 2)
+ 
+ver95ls <- getverticeshr(kde_lscv,95) # get vertices for home range
+ver95ls_sf <- st_as_sf(ver95ls) 
+ 
+ver50ls <- getverticeshr(kde_lscv,50)
+ver50ls_sf <- st_as_sf(ver50ls) 
+
+# plot the outputs 
+#mapview(ver50ls_sf, zcol = "id") 
+#mapview (ver95ls_sf, zcol = "id")
+
+
+# entire north America 
+global_lscv <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = ver95ls_sf , alpha = 0.4, fill = "yellow")+
+  #geom_sf(data = ver75_sf, alpha = 0.4, fill = "dark blue")+
+  geom_sf(data = ver50ls_sf, alpha = 0.4, fill = "purple")+
+  #geom_sf(data = dbisf, , size = 1, alpha = 0.2,colour = "grey") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  #scale_colour_viridis_c() +
+  theme_bw()+
+  labs(title = paste0("KDE - h ref"))+
+ # guides(col= guide_legend(title= "Clusters"))+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_lscv
+
+```
+
+
+
+##### kde: variable smoothing parameters (h)
+
+To test the sensitivity of the h value we can test a bivariate normal kernel with a variety of smoothing parameters (h = 1000, 2000, 4000).
+We can then interpreted visually to determine size to use based on successive trials. This approach is supported by literature (Hemson et al. 2005; Calenge et al. 2011).
+
+```{r, echo = FALSE, fig.align='center', fig.width=8, fig.height=5,warning=FALSE, message=FALSE}
+
+kde_h1000  <- kernelUD(dbisfgeo, h = 1000, kern = c("bivnorm"), grid = 500,extent = 2)
+kde_h500  <- kernelUD(dbisfgeo, h = 500, kern = c("bivnorm"), grid = 500,extent = 2)
+kde_h3000  <- kernelUD(dbisfgeo, h = 3000, kern = c("bivnorm"), grid = 500,extent = 2)
+
+# Lets extract the vertices and compare the outputs by building a plot.
+# # kde - href = 1000
+ver95_1000 <- getverticeshr(kde_h1000, 95) # get vertices for home range
+ver95_1000_sf <- st_as_sf(ver95_1000) |>     mutate(h = 1000) # convert to sf object 
+
+# # kde - href = 500
+ver95_500 <- getverticeshr(kde_h500, 95) # get vertices for home range
+ver95_500_sf <- st_as_sf(ver95_500)  |> 
+   mutate(h = 500) # convert to sf object 
+#   
+# kde - href = 3000
+ver95_3000 <- getverticeshr(kde_h3000, 95) # get vertices for home range
+ver95_3000_sf <- st_as_sf(ver95_3000)  |> 
+   mutate(h = 3000) # convert to sf object 
+#   
+# # bind all data together 
+all_verts <- bind_rows(ver95_1000_sf,  ver95_500_sf,  ver95_3000_sf)
+
+
+# entire north America 
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = all_verts, aes(colour = h), alpha = 0.1, colour = "dark blue") +
+  #geom_sf(data = dbisf, size = 1.2, alpha = 0.2, colour = "dark blue") +
+  #facet_wrap(~movement_dir)+
+  # geom_point(ru, aes(x = lng, y = lat), size = 4) +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  #coord_sf(xlim = c(-130, -40), ylim = c(10, 80), expand = FALSE)+
+  #scale_colour_viridis_d() +
+  #coord_sf() +
+  facet_wrap(vars(h)) +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global
+
+```
+##### Comparison of kde parameters
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.align='center', fig.height=4, fig.width=6}
+
+# ## Comparison of kde parameters
+# 
+# Lets rerun the home range by season and compare the methods for the KDE. 
+dbisfgeo <- dbisf |>  
+  dplyr::select(tag.id) |>
+  as("Spatial")
+ 
+ # href 
+kde_href  <- kernelUD(dbisfgeo, h = "href", kern = c("bivnorm"), grid = 500, extent = 2)
+ 
+ # custome h values 
+ kde_h1000  <- kernelUD(dbisfgeo, h = 1000, kern = c("bivnorm"), grid = 500,extent = 2)
+ 
+ # lscv 
+ kde_lscv  <- kernelUD(dbisfgeo, h = "LSCV", kern = c("bivnorm"), grid = 500, extent = 2)
+  
+ 
+ # build function to get vertices 
+ 
+get_verts <- function(in_kde, percent = 95, fieldname){
+
+  ver <- getverticeshr(in_kde, percent) # get vertices for home range
+  ver_sf <- st_as_sf(ver)  |>
+    mutate(type = fieldname)
+
+  return(ver_sf)
+}
+
+#dbisfgeo
+# genertate vertices for each KDE
+
+href <- get_verts(kde_href, percent = 95, fieldname = "href")
+h1000 <- get_verts(kde_h1000, percent = 95, fieldname = "h1000")
+kde_lscv <- get_verts(kde_lscv, percent = 95, fieldname = "lscv")
+ 
+# bind all data together 
+all_seasons <- bind_rows(href, h1000, kde_lscv)
+   
+# # lets plot the output
+# ggplot(data = all_seasons) +
+# geom_sf(
+#     aes(colour = id),
+#     alpha = 0.1
+#   ) +
+#   scale_colour_viridis_d() +
+#   coord_sf() +
+#   facet_wrap(vars(type)) +
+#   theme_bw()
+# 
+
+# Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+Americas <- world %>% 
+  dplyr::filter(region_un == "Americas")%>% 
+  select(admin)
+
+# entire north America 
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = all_seasons, aes(colour = id), alpha = 0.1, colour = "dark blue") +
+  geom_sf(data = dbisf, size = 1.2, alpha = 0.2, colour = "dark blue") +
+  #facet_wrap(~movement_dir)+
+  # geom_point(ru, aes(x = lng, y = lat), size = 4) +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  #coord_sf(xlim = c(-130, -40), ylim = c(10, 80), expand = FALSE)+
+  #scale_colour_viridis_d() +
+  #coord_sf() +
+  facet_wrap(vars(type)) +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global
+#ggsave(file.path(out.plots,"figure1_all_reknnoalpha0.2.jpg"), width = 30, height = 30,units = "cm", dpi = 600)
+
+
+```
+
+
+## Questions for discussions
+
+1)  For identification of clusters (DBScan) are you happy to use the 2.5km threshold or any reason to be finer or coarser scale. Note: we have the option to remove locations with poor accuracy metrics.

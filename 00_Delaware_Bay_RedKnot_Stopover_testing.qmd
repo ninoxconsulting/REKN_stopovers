@@ -48,7 +48,7 @@ In the example below we show how the dbscan is used to identify clustered locati
 
 As a test we will focus only on Delaware Bay and revise methodology as we expand to broader stopover locations.
 
-```{r, echo = FALSE, warning=FALSE}
+```{r, echo = FALSE, warning=FALSE,fig.align='center'}
 dbi <- read.csv(path("01_raw_data", "test_db_locations.csv"))
 
 data <- dbi |> 
@@ -181,7 +181,12 @@ We can review some of these various outputs to determine how the variabilites in
 
 It is also possible to run KDE with set barriers and boundaries.
 
+<br>
+
 #####  kde: h reference parameter
+
+We estimate the home range using the "href" metrics. This is determined based on the spread of data. Once the range is calculated (**Utilization distribution of several Animals**) we can extract the vertices or polygons which define the percentage we wish to include. In the figure below we show the 95% threshold in yellow, 75% threshold is blue and 50% threshold is purple. The larger the percent selected the more inclusive the area mapped. 
+
 
 ```{r, echo = FALSE, warning=FALSE, message=FALSE}
 ## Generate kernal density ####
@@ -212,16 +217,6 @@ kde_href  <- kernelUD(dbisfgeo, h = "href", kern = c("bivnorm"), grid = 500, ext
  ver50 <- getverticeshr(kde_href,50)
  ver50_sf<- st_as_sf(ver50)
   
-# # plot the outputs 
- # mapview(ver50_sf, zcol = "id") 
- # mapview (ver75_sf, zcol = "id") 
- # mapview (ver95_sf, zcol = "id")
- #  
- # plot(st_geometry(ver95_sf),col = "yellow") 
- # plot(st_geometry(ver75_sf),col = "blue", add = TRUE)
- # plot(st_geometry(ver50_sf),col = "purple", add = TRUE)
- # plot(dbisfgeo, pch = 1, size = 0.5, add = TRUE)     # Add points 
-
 # entire north America 
 global_href <- ggplot(data = Americas) +
   geom_sf(color = "grey") +
@@ -231,10 +226,8 @@ global_href <- ggplot(data = Americas) +
   #geom_sf(data = dbisf, , size = 1, alpha = 0.2,colour = "grey") +
   xlab("Longitude") + ylab("Latitude") +
   coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
-  #scale_colour_viridis_c() +
   theme_bw()+
   labs(title = paste0("KDE - h ref"))+
- # guides(col= guide_legend(title= "Clusters"))+
   theme(axis.text.x=element_blank(),
         axis.text.y=element_blank())
 
@@ -242,7 +235,13 @@ global_href
  
 ```
 
+
+<br>
+
 ##### kde: Least Squares Cross Validation (lscv) method.
+
+The Least Square Cross Validation (LSCV) method, which minimizes the difference in volume between the true UD and the estimates UD, reflects a more restricted distribution. There is potential to refine the parameters to tweak these further. 
+
 
 ```{r, echo = FALSE,warning=FALSE, message=FALSE}
  
@@ -272,7 +271,7 @@ global_lscv <- ggplot(data = Americas) +
   coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
   #scale_colour_viridis_c() +
   theme_bw()+
-  labs(title = paste0("KDE - h ref"))+
+  labs(title = paste0("KDE - lscv"))+
  # guides(col= guide_legend(title= "Clusters"))+
   theme(axis.text.x=element_blank(),
         axis.text.y=element_blank())
@@ -281,11 +280,11 @@ global_lscv
 
 ```
 
-
+<br>
 
 ##### kde: variable smoothing parameters (h)
 
-To test the sensitivity of the h value we can test a bivariate normal kernel with a variety of smoothing parameters (h = 1000, 2000, 4000).
+To test the sensitivity of the h value we can also test a bivariate normal kernel with a variety of smoothing parameters (h = 500, 1000, 3000).
 We can then interpreted visually to determine size to use based on successive trials. This approach is supported by literature (Hemson et al. 2005; Calenge et al. 2011).
 
 ```{r, echo = FALSE, fig.align='center', fig.width=8, fig.height=5,warning=FALSE, message=FALSE}
@@ -312,7 +311,6 @@ ver95_3000_sf <- st_as_sf(ver95_3000)  |>
 # # bind all data together 
 all_verts <- bind_rows(ver95_1000_sf,  ver95_500_sf,  ver95_3000_sf)
 
-
 # entire north America 
 global <- ggplot(data = Americas) +
   geom_sf(color = "grey") +
@@ -325,6 +323,7 @@ global <- ggplot(data = Americas) +
   #coord_sf(xlim = c(-130, -40), ylim = c(10, 80), expand = FALSE)+
   #scale_colour_viridis_d() +
   #coord_sf() +
+  labs(title = paste0("KDE - variable smoothing parameters"))+
   facet_wrap(vars(h)) +
   theme_bw()+
   theme(axis.text.x=element_blank(),
@@ -333,6 +332,9 @@ global <- ggplot(data = Americas) +
 global
 
 ```
+
+<br>
+
 ##### Comparison of kde parameters
 
 ```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.align='center', fig.height=4, fig.width=6}
@@ -374,18 +376,6 @@ kde_lscv <- get_verts(kde_lscv, percent = 95, fieldname = "lscv")
  
 # bind all data together 
 all_seasons <- bind_rows(href, h1000, kde_lscv)
-   
-# # lets plot the output
-# ggplot(data = all_seasons) +
-# geom_sf(
-#     aes(colour = id),
-#     alpha = 0.1
-#   ) +
-#   scale_colour_viridis_d() +
-#   coord_sf() +
-#   facet_wrap(vars(type)) +
-#   theme_bw()
-# 
 
 # Geographic distributon of tags
 world <- ne_countries(scale = "medium", returnclass = "sf")
@@ -398,22 +388,15 @@ Americas <- world %>%
 global <- ggplot(data = Americas) +
   geom_sf(color = "grey") +
   geom_sf(data = all_seasons, aes(colour = id), alpha = 0.1, colour = "dark blue") +
-  geom_sf(data = dbisf, size = 1.2, alpha = 0.2, colour = "dark blue") +
-  #facet_wrap(~movement_dir)+
-  # geom_point(ru, aes(x = lng, y = lat), size = 4) +
+  #geom_sf(data = dbisf, size = 1, alpha = 0.1, colour = "dark blue") +
   xlab("Longitude") + ylab("Latitude") +
   coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
-  #coord_sf(xlim = c(-130, -40), ylim = c(10, 80), expand = FALSE)+
-  #scale_colour_viridis_d() +
-  #coord_sf() +
   facet_wrap(vars(type)) +
   theme_bw()+
   theme(axis.text.x=element_blank(),
         axis.text.y=element_blank())
 
 global
-#ggsave(file.path(out.plots,"figure1_all_reknnoalpha0.2.jpg"), width = 30, height = 30,units = "cm", dpi = 600)
-
 
 ```
 

@@ -17,10 +17,13 @@ library(dbscan)
 library(ggplot2)
 library(adehabitatHR)
 library(sp)
+library(viridisLite)
+library(ggpointdensity)
+library(ggspatial) # For base maps
 
 ```
 
-To better understand Red Knot migration and stopover locations we used high precision GPS data locations compiled from 300 individual GPS/satellite tags to identify and characterize stopovers and migration routes.
+To better understand Red Knot migration and stopover locations we used high precision GPS data locations from 300 individual GPS/satellite tags to identify and characterize stopovers and migration routes.
 
 <br>
 
@@ -42,7 +45,7 @@ Location data was converted from text to a spatial format (using the sf package)
 
 #### 2.2 Identify Stopover Locations
 
-We applied a density based clustering algorithm (DBScan) to identify clusters of locations or stopoovers ( Ester et al. 1996). The advantage of this method over more traditional clustering (i.e. K-means clustering), is that the number of clusters does not need to be defined aprioir, clusters can be non-circular, and outliers are identified. This is well suited to Red Knot GPS/satellite data which can have multiple stopovers in close proximity and where outliers are expected due to variable spatial precision.
+We applied a density based clustering algorithm (DBScan) to identify clusters of locations or stopovers ( Ester et al. 1996). The advantage of this method over more traditional clustering (i.e. K-means clustering), is that the number of clusters does not need to be defined apriori, clusters can be non-circular, and outliers are identified. This is well suited to Red Knot GPS/satellite data which can have multiple stopovers in close proximity and where outliers are expected due to variable spatial precision.
 
 In the example below we show how the dbscan is used to identify clustered locations for one tag (id = 260808) within Delaware Bay. This bird was tagged in Avalon in October 2024.
 
@@ -151,7 +154,7 @@ abline(h = 2500, lty = 2)
 
 We now run the density clustering algorithm. This requires two input parameters 1) minimum number of points for a cluster and 2) the distance threshold (eps) for points to be considered neighbors.
 
-From a review of the figure 2 and literature we tested two distance thresholds; 1) 2500m and 2) 5000m. Figure 3 shows the result of the two different thresholds. Clusters listed as zero (0) are identified as outliers. We can see in Figure 3 that the smaller threshold distance (2500) results in identification of four clusters. This might be helpful in identifying sub locations within a broader stopover location. Alternatively when a wider threshold if used (5000m) the algorith includes points in a single cluster, or marks them as outliers
+From a review of the figure 2 and literature we tested two distance thresholds; 1) 2500m and 2) 5000m. Figure 3 shows the result of the two different thresholds. Clusters listed as zero (0) are identified as outliers. We can see in Figure 3 that the smaller threshold distance (2500) results in identification of four clusters. This might be helpful in identifying sub locations within a broader stopover location. Alternatively when a wider threshold if used (5000m) the algorithm includes points in a single cluster, or marks them as outliers
 
 ```{r fig.height= 6, fig.width=8, echo =FALSE, fig.align='centre', fig.cap="Figure 3:Identified clusters using threshold values of 2500 (left) and 5000 (right). Colours represent identified clusters" }
 global
@@ -159,13 +162,13 @@ global
 
 <br>
 
-Irrespective of the threshold chosen, we can filter out points identified as outliers to provide a dataset of only stopover locations which forms the basis for our estimate of stopover locations.
+Irrespective of the threshold chosen, we can filter out points identified as outliers to provide a data set of only stopover locations which forms the basis for our estimate of stopover locations.
 
 <br> <br>
 
-#### 2.3 Kernal Density Estimates (kde)
+#### 2.3 Kernel Density Estimates (kde)
 
-To better map the stopover areas we can use a kernal density estimate (kde) method to estimate the distribution of locations. Calculations for KDE require consideration of the mathematical method to describe the density function. A detailed description of the parameters can be found [here](http://www.spatialecology.com/gme/kde.htm).
+To better map the stopover areas we can use a kernel density estimate (kde) method to estimate the distribution of locations. Calculations for KDE require consideration of the mathematical method to describe the density function. A detailed description of the parameters can be found [here](http://www.spatialecology.com/gme/kde.htm).
 
 KDEs are very sensitive to input parameters, specifically the bandwidth (h) which determines the [smoothing parameter](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf). H parameters can be estimated using three methods:
 
@@ -193,11 +196,6 @@ We estimate the stopover range using the "href" metrics. This is determined base
 
 ```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 4: KDE estimates using href method. Polygons represnt the 95% threshold in yellow, 75% threshold is blue and 50% threshold is purple"}
 ## Generate kernal density ####
-# library(sf)
-library(mapview)
-library(adehabitatHR)
-library(sp)
-
 
 # #### 3.1 kde: h reference parameter
 dbisfgeo <- dbisf |>  
@@ -247,7 +245,7 @@ global_href
 
 The Least Square Cross Validation (LSCV) method, which minimizes the difference in volume between the true UD and the estimates UD, reflects a more restricted distribution. There is potential to refine the parameters to tweak these further.
 
-```{r, echo = FALSE,warning=FALSE, message=FALSE,"Figure 5: KDE estimates using least-square cross validation method."}
+```{r, echo = FALSE,warning=FALSE, message=FALSE, fig.cap="Figure 5: KDE estimates using least-square cross validation method."}
  
 # #### 3.2 kde: Least Squares Cross Validation (lscv) method.
 # 
@@ -396,15 +394,216 @@ global <- ggplot(data = Americas) +
 
 ```
 
-## Questions for discussions
+<br>
+
+### 4. Multiple individuals
+
+We can apply these methods to multiple individuals to assess density of stopover locations within Delaware Bay. We can do this based on 1) stopover overlaps or 2) point density.
+
+First, we subset individuals with had 10 or more locations within the area, we then use the dbscan method discussed above to isolate clusters or stopovers using the 2500m distance parameters. We then remove the outlier location points. Figure 8 below shows all gps/satellite tag locations within the Delaware Bay region over for 84 tags. The grey locations represent outliers and the blue locations are identified clusters, as generated per individual tag.
+
+```{r, echo = FALSE, fig.align='center', fig.cap="Figure 7: GPS locations for 84 tags within the Delaware Bay region. Grey points are identified as outliers using density scan algorith per bird. Blue points are identified within the key stopovers", message=FALSE, warning=FALSE}
+
+# read in del birds 
+del_birds <- st_read(path("01_raw_data", "del_birds.gpkg"), quiet = TRUE)
+db_sum <- del_birds |> 
+  st_drop_geometry() |> 
+  group_by(tag.id) |> 
+  summarise(n = n()) |> 
+  arrange(n)
+
+# filter where less than 10 points within aoi
+db_tagids <- db_sum |> 
+  filter(n > 10) |> 
+  pull(tag.id)
+
+
+#####################################
+## 1: Use db scan to remove outliers based on month and tag id. 
+
+db <- del_birds |> filter(tag.id %in% db_tagids) 
+db <- st_transform(db, crs = 4087)
+db <- cbind(db, st_coordinates(db))
+
+#plot(db$year, db$month)
+#hist(db$month)
+
+db <- db |>
+  st_drop_geometry() |> 
+  select(tag.id,year, month, day, X, Y)
+
+dbsf <- st_as_sf(db, coords = c("X", "Y"), crs = 4087)
+
+# make list of tags by month 
+#tagls <- unique(db$tag.id)
+#taglsm <- db |> select(tag.id, month, day) |> unique()
+#taglsm <- taglsm |> mutate(id = seq(1:length(taglsm$tag.id)))
+
+
+all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"), quiet = TRUE)
+# pts with remove the outlier points 
+
+# # # Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+Americas <- world %>%
+   dplyr::filter(region_un == "Americas")%>%
+   select(admin)
+ 
+# entire north America
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = dbsf, size = 1.2, alpha = 0.4, col = "darkgrey") +
+  geom_sf(data = all_pts, size = 1.2, alpha = 0.2, col = "blue") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
+  scale_colour_viridis_c() +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+global
+
+```
+
+<br>
+
+#### 4.1 Stopover polygon density
+
+As described above can generate a home range or stopover polygon for each bird using the KDE method. For this summary we used a h-ref smoothing function and generated a home range kernel for each tag and month combination. All years were combined but these could be split out as needed.
+
+```{r, echo = FALSE, fig.align='center', fig.cap="Figure 8: GPS points and estimates stopover ranges per month for Delaware Bay", fig.width = 8, fig.height=8}
+## Summarise the dataset by tag id and no of months 
+
+all_polys <- st_read(path("01_raw_data", "Del_birds_month_yr_polygons.gpkg"), quiet = TRUE)
+
+all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"), quiet = TRUE)
+
+# summary_db <- all_polys |> 
+#   st_drop_geometry() |> 
+#   group_by(id) |> 
+#   summarise(n_months = n_distinct(month),
+#             n_years = n_distinct(year)) 
+# 
+
+## note we can filter this down to 50% percentage 
+
+all_poly_50 <- all_polys |> filter(th == 50)
+
+# ggplot 
+
+global_50 <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  #geom_sf(data = dbsf,  size = 1, alpha = 0.2,colour = "blue") +
+  geom_sf(data = all_pts,  size = 1, alpha = 0.2,colour = "blue") +
+  #geom_sf(data = all_poly_50, linewidth = 0.5, alpha = 0.4, fill = "red")+
+  geom_sf(data = all_poly_50, linewidth = 0.1,  alpha = 0.2,fill = "red", color = "red")+
+  xlab("Longitude") + ylab("Latitude") +
+  #coord_sf(xlim = c(-75, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  theme_bw()+
+  facet_wrap(~month)+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_50
+
+
+```
+
+<br>
+
+In figure 8 above, we can see the refined point locations (blue) along with a home range (red polygons) for the 84 individuals who were tracked through Delaware Bay. We plot each month separately to view how stopover locations change with season.
+
+#### 4.2 Stopover point density.
+
+Alternately we can review the density of stopover use based on the points rather than estimated home range (polygons). To ensure this was a standardized metrics, I selected only one location per day (rather than the full data set used above). We can then generate density metrics over all months and years (Figure 9) or by month (Figure 10).
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.align='center', fig.cap="Figure 9: Point Density estimates (all months combined)"}
+
+###################################################
+## Part 3: Calculate a density plots using points. 
+
+##################################################
+# # filter so that all points are the same density 
+library(viridis)
+library(viridisLite)
+library(ggpointdensity)
+library(ggspatial) # For base maps
+
+all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"), quiet = TRUE)
+
+all_pts<- cbind(all_pts, st_coordinates(all_pts))
+
+all_pts_density <- all_pts|> group_by(tag.id, year, month, day) |>
+  slice_head(n = 1) |> 
+  ungroup() 
+
+ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
+  geom_pointdensity() +
+  scale_color_viridis()+
+  theme_bw()
+```
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.align='center', fig.cap="Figure 10: Point Density estimates by month"}
+
+ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
+  geom_pointdensity() +
+  #annotation_map_tile(type = "osm") +
+  scale_color_viridis()+
+  facet_wrap( ~ month ) 
+# 
+# 
+# ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
+#   geom_bin2d()+
+#   #annotation_map_tile(type = "osm") +
+#   scale_color_viridis()+
+#   facet_wrap( ~ month ) 
+
+
+# 
+# ## Testing map 1 
+# 
+# ggplot(all_pts) +
+#   stat_density_2d(aes(x = st_coordinates(all_pts)[,1],
+#                       y = st_coordinates(all_pts)[,2]),
+#                   geom = "polygon") +
+#   scale_fill_viridis_c() +
+#   labs(title = "Spatial Point Density", x = "Longitude", y = "Latitude") +
+#   theme_minimal()
+
+# Testing map 2
+# 
+# global_href <- ggplot(data = Americas) +
+#   geom_sf(color = "grey") +
+#   #geom_sf(data = dbsf,  size = 1, alpha = 0.2,colour = "blue") +
+#   #geom_sf(data = all_pts,  size = 1, alpha = 0.2,colour = "lightblue") +
+#   geom_pointdensity(all_pts, mapping = aes(x = X, y = Y)) +
+#   
+#   #geom_sf(data = all_poly_50,  alpha = 0.4,fill = "red")+
+#   xlab("Longitude") + ylab("Latitude") +
+#   #coord_sf(xlim = c(-75, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
+#   coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+#   theme_bw()+
+#   facet_wrap(~month)+
+#   theme(axis.text.x=element_blank(),
+#         axis.text.y=element_blank())
+# 
+# global_href
+
+```
+
+We can see these are fairly similar to the kde estimates.
+
+<br> <br>
+
+## 5. Questions for discussions
 
 To identify stopover locations we have to decide on which approach best fits the Red Knot stopover behavior and ecology.
 
 -   Distance threshold for stopover locations. Figure 3 show the different clusters identified by using two different distance threshold values. I would suggest sticking with finer scale (2500), as this might be helpful in differentiating sub clusters in the future as needed.
 
--   Kde smoothing parameter. Based on the testing above I would suggest using a wider smoothing function (h value), then generating the % thresholds as shown in Figure 4. Depending on how tightly you want to refine the stopover locations we can calculate the stopover location and then use a standard threshold to narrow down the area used. An example is show in Figure 7 below. In this figure we use a href approach with various % thresholds (50%, 65%, 75%, 85%,and 95% ) to illustrate the variability.
+-   Kde smoothing parameter. Based on the testing above I would suggest using a wider smoothing function (h value), then generating the % thresholds as shown in Figure 4. Depending on how tightly you want to refine the stopover locations we can calculate the stopover location and then use a standard threshold to narrow down the area used. An example is show in Figure 11 below. In this figure we use a href approach with various % thresholds (50%, 65%, 75%, 85%,and 95% ) to illustrate the variability.
 
-```{r, echo = FALSE, message = FALSE, fig.align = "center", warning=FALSE, fig.cap="Figure 7: KDE estimates using href smoothing and various percent thresholds" }
+```{r, echo = FALSE, message = FALSE, fig.align='center', fig.width=8, fig.height=6, warning=FALSE, fig.cap="Figure 11: KDE estimates using href smoothing and various percent thresholds" }
 dbisfgeosf <- st_as_sf(dbisfgeo)
 
 # # define the parameters (h, kern, grid, extent) 
@@ -448,302 +647,24 @@ global_href
  
 ```
 
-### 4. Multiple individuals 
+<br>
 
-We can apply these methods to multiple individuals to assess density of stopover locations within Delaware Bay.
+-   Multiple species analysis-How should the home range estimates be calculated temporally? i.e. months or potential north/south ward direction? This could be tricky for birds who winter in South East USA.
 
+-   Preference for polygon (kde) vs point density. I think using kde is a more robust option as generated per tag and time period as this accounts for individual bird movement, not captured using a point density metrics directly.
 
-```{r, echo = TRUE}
+-   Currently this is limited to rufa subpopulations? Is this correct?
 
-## up to here!!!!!
+<br>
 
-# read in del birds 
+## 6. Next Steps
 
-del_birds <- st_read(path("01_raw_data", "del_birds.gpkg"))
+-   Decide on parameters for dbscan - i.e. 2500m or 5000m
+-   Use full data set to identify clusters for all birds.
 
-db_sum <- del_birds |> 
-  st_drop_geometry() |> 
-  group_by(tag.id) |> 
-  summarise(n = n()) |> 
-  arrange(n)
+<br>
 
-#hist(db_sum$n, breaks = 25)
-
-# filter where less than 10 points within aoi
-db_tagids <- db_sum |> 
-  filter(n > 10) |> 
-  pull(tag.id)
-
-
-#####################################
-## 1: Use db scan to remove outliers based on month and tag id. 
-
-db <- del_birds |> filter(tag.id %in% db_tagids) 
-db <- st_transform(db, crs = 4087)
-db <- cbind(db, st_coordinates(db))
-
-#plot(db$year, db$month)
-#hist(db$month)
-
-db <- db |>
-  st_drop_geometry() |> 
-  select(tag.id,year, month, day, X, Y)
-
-dbsf <- st_as_sf(db, coords = c("X", "Y"), crs = 4087)
-
-# make list of tags by month 
-#tagls <- unique(db$tag.id)
-taglsm <- db |> select(tag.id, month, day) |> unique()
-taglsm <- taglsm |> mutate(id = seq(1:length(taglsm$tag.id)))
-
-
-# # identify the stopover locations 
-# 
-# all_pts <- purrr::map(taglsm$id, function(x){
-#   
-#   #x = taglsm$id[63]  
-#   taglsmi <- taglsm[x,]
-#   
-#   dbi <- db |> 
-#     filter(tag.id == taglsmi$tag.id) |> 
-#     filter(month == taglsmi$month)
-#     
-#   dbixy <- dbi |> select(X,Y)
-#   
-#   dbs <- dbscan(dbixy, 2500, MinPts = 5)
-#   #plot(dbs, dbixy, main = "DBSCAN", frame = FALSE)
-#   dbi$cluster <- dbs$cluster
-#   dbisf <- st_as_sf(dbi, coords = c("X", "Y"), crs = 4087)
-#   dbisf <- dbisf |> filter(cluster !=0)
-#   
-# }) |> bind_rows()
-# 
-# st_write(all_pts, path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
-# 
-
-
-all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
-# pts with remove the outlier points 
-
-# # # Geographic distributon of tags
-world <- ne_countries(scale = "medium", returnclass = "sf")
-Americas <- world %>%
-   dplyr::filter(region_un == "Americas")%>%
-   select(admin)
- 
-# entire north America
-global <- ggplot(data = Americas) +
-  geom_sf(color = "grey") +
-  geom_sf(data = dbsf, size = 1.2, alpha = 0.4, col = "darkgrey") +
-  geom_sf(data = all_pts, size = 1.2, alpha = 0.2, col = "blue") +
-  xlab("Longitude") + ylab("Latitude") +
-  coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
-  scale_colour_viridis_c() +
-  theme_bw()+
-  theme(axis.text.x=element_blank(),
-        axis.text.y=element_blank())
-global
-
-
-#####################################################
-## Part 2: generate the polygons based on the stopover locations without outliers
-
-all_pts<- cbind(all_pts, st_coordinates(all_pts))
-
-# convert to sp object
-all_pts_sp <- all_pts|> 
-  as("Spatial") 
-
-all_pts <- all_pts |> st_drop_geometry()
-
-taglsm <- all_pts |> select(tag.id, month) |> unique()
-
-taglsm <- taglsm |> mutate(id = seq(1:length(taglsm$tag.id)))
-
-#taglsm <- taglsm[1:3]
-
-# loop through the combinations of month and year and id 
-all_poly <- purrr::map(taglsm$id, function(x){
-  
-  #print(x)
-  #x = taglsm$id[5]  
-  taglsmi <- taglsm[x,]
-  
-  dbi <- all_pts |> 
-    filter(tag.id == taglsmi$tag.id) |> 
-    filter(month == taglsmi$month) 
-  
-  #  kde: h reference parameter
-  dbisf <- st_as_sf(dbi, coords = c("X", "Y"), crs = 4087)
-  
-  dbisp <- dbisf |> 
-    select(tag.id) |> 
-    as("Spatial")
-  
-  # # define the parameters (h, kern, grid, extent) 
-  kde_href  <- kernelUD(dbisp, h = "href", kern = c("bivnorm"), grid = 500, extent = 2)
-  
-  # add a try statement to skip to next line if error is produced in vers95
-  
-  ver95_sf <- tryCatch({
-    ver95 <- getverticeshr(kde_href,95) # get vertices for home range
-    st_as_sf(ver95) |> 
-      mutate(th = 95)        # convert to sf object 
-  }, error = function(e) {
-    return(NULL) # return NULL if error occurs
-  })
-  
-  ver75_sf <- tryCatch({
-    ver75 <- getverticeshr(kde_href,75)
-    st_as_sf(ver75 )|> 
-      mutate(th = 75)
-  }, error = function(e) {
-    return(NULL) # return NULL if error occurs
-  })
-  
-  ver50_sf <- tryCatch({
-    ver50 <- getverticeshr(kde_href,50)
-    st_as_sf(ver50) |> 
-      mutate(th = 50)
-  }, error = function(e) {
-    return(NULL) # return NULL if error occurs
-  })
-  
-  # if it is not null the bind 
-  if(!is.null(ver95_sf) & !is.null(ver75_sf) & !is.null(ver50_sf)) {
-    allvers <- bind_rows( ver95_sf, ver75_sf , ver50_sf)
-    allvers$month = unique(dbi$month)
-    allvers$year = unique(dbi$year)
-    
-    return(allvers)
-  }
-  
-}) |> bind_rows()
-
-st_write(all_poly, path("01_raw_data", "Del_birds_month_yr_polygons.gpkg"))
-
-
-
-
-## Summarise the dataset by tag id and no of months 
-## how many birds have more than 1 year and more than one month 
-
-all_polys <- st_read(path("01_raw_data", "Del_birds_month_yr_polygons.gpkg"))
-
-all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
-
-summary_db <- all_polys |> 
-  st_drop_geometry() |> 
-  group_by(id) |> 
-  summarise(n_months = n_distinct(month),
-            n_years = n_distinct(year)) 
-
-
-## note we can filter this down to 50% percentage 
-
-all_poly_50 <- all_polys |> filter(th == 50)
-
-# ggplot 
-
-global_href <- ggplot(data = Americas) +
-  geom_sf(color = "grey") +
-  #geom_sf(data = dbsf,  size = 1, alpha = 0.2,colour = "blue") +
-  geom_sf(data = all_pts,  size = 1, alpha = 0.2,colour = "lightblue") +
-  #geom_sf(data = all_poly_50, linewidth = 0.5, alpha = 0.4, fill = "red")+
-  geom_sf(data = all_poly_50,  alpha = 0.4,fill = "red")+
-  xlab("Longitude") + ylab("Latitude") +
-  #coord_sf(xlim = c(-75, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
-  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
-  theme_bw()+
-  facet_wrap(~month)+
-  theme(axis.text.x=element_blank(),
-        axis.text.y=element_blank())
-
-global_href
-
-
-
-
-
-
-
-
-###################################################
-## Part 3: Calculate a density plots using points. 
-
-##################################################
-# # filter so that all points are the same density 
-
-library(ggplot2)
-library(dplyr)
-library(viridis)
-library(ggpointdensity)
-library(ggspatial) # For base maps
-
-all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
-
-all_pts<- cbind(all_pts, st_coordinates(all_pts))
-
-all_pts_density <- all_pts|> group_by(tag.id, year, month, day) |>
-  slice_head(n = 1) |> 
-  ungroup() 
-
-ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
-  geom_pointdensity() +
-  scale_color_viridis()+
-  theme_bw()
-
-ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
-  geom_pointdensity() +
-  annotation_map_tile(type = "osm") +
-  scale_color_viridis()+
-  facet_wrap( ~ month ) 
-
-
-ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
-  geom_bin2d()+
-  #annotation_map_tile(type = "osm") +
-  scale_color_viridis()+
-  facet_wrap( ~ month ) 
-
-
-
-## Testing map 1 
-
-ggplot(all_pts) +
-  stat_density_2d(aes(x = st_coordinates(all_pts)[,1],
-                      y = st_coordinates(all_pts)[,2]),
-                  geom = "polygon") +
-  scale_fill_viridis_c() +
-  labs(title = "Spatial Point Density", x = "Longitude", y = "Latitude") +
-  theme_minimal()
-
-# Testing map 2
-
-global_href <- ggplot(data = Americas) +
-  geom_sf(color = "grey") +
-  #geom_sf(data = dbsf,  size = 1, alpha = 0.2,colour = "blue") +
-  #geom_sf(data = all_pts,  size = 1, alpha = 0.2,colour = "lightblue") +
-  geom_pointdensity(all_pts, mapping = aes(x = X, y = Y)) +
-  
-  #geom_sf(data = all_poly_50,  alpha = 0.4,fill = "red")+
-  xlab("Longitude") + ylab("Latitude") +
-  #coord_sf(xlim = c(-75, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
-  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
-  theme_bw()+
-  facet_wrap(~month)+
-  theme(axis.text.x=element_blank(),
-        axis.text.y=element_blank())
-
-global_href
-
-```
-
-
-
-
-
-
+<br>
 
 ### References
 

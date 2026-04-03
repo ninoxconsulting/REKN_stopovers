@@ -62,7 +62,7 @@ all_pts <- purrr::map(taglsm$id, function(x){
   dbi <- db |> 
     filter(tag.id == taglsmi$tag.id) |> 
     filter(month == taglsmi$month)
-    
+  
   dbixy <- dbi |> select(X,Y)
   
   dbs <- dbscan(dbixy, 2500, MinPts = 5)
@@ -83,9 +83,9 @@ all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
 # # # Geographic distributon of tags
 world <- ne_countries(scale = "medium", returnclass = "sf")
 Americas <- world %>%
-   dplyr::filter(region_un == "Americas")%>%
-   select(admin)
- 
+  dplyr::filter(region_un == "Americas")%>%
+  select(admin)
+
 # entire north America
 global <- ggplot(data = Americas) +
   geom_sf(color = "grey") +
@@ -291,10 +291,3 @@ global_href <- ggplot(data = Americas) +
         axis.text.y=element_blank())
 
 global_href
-
-
-
-
-
-
-

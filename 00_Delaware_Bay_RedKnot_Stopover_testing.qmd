@@ -12,17 +12,17 @@ library(sf)
 library(lubridate)
 library("rnaturalearth")
 library("rnaturalearthdata")
-#install.packages("fpc")
-#install.packages("dbscan")
 library(fpc)
 library(dbscan)
 library(ggplot2)
+library(adehabitatHR)
+library(sp)
 
 ```
 
-## Red Knot Stopover locations
-
 To better understand Red Knot migration and stopover locations we used high precision GPS data locations compiled from 300 individual GPS/satellite tags to identify and characterize stopovers and migration routes.
+
+<br>
 
 ### 1.GPS/satellite data
 
@@ -30,19 +30,19 @@ Location and deployment data was obtained from 300 individual Red Knot *rufa* *s
 
 ### 2. Methodology
 
-We expanded on initial testing conducted by Theo Diehl and Stephanie Feigin to standardize and refine the process to enable transparent and repeatable method to be rolled out to multiple individuals.
+To identify stopover locations, we expanded on initial testing conducted by Theo Diehl and Stephanie Feigin. The aim was to standardize and refine the process to map stopover locations, to enable transparent and repeatable method to be rolled out to multiple individuals.
 
-#### 2.1 GPS data preprocessing
+#### 2.1 GPS data pre processing
 
-All GPS/satellite data was downloaded in .csv format along with detailed reference data. This was provided by G.Perkins as part of ongoing work with US F&W to compile existing tagged Red Knot information.
+All GPS/satellite data was downloaded in .csv format along with detailed deployment data. This was was previously compiled by G.Perkins as part of ongoing work with US F&W.
 
 Data was filtered to include individuals from rufa subpopulations who had recorded a movement away from their initial deployment location. This reduced the error of inclusion of short-lived tags, tags that were malfunctioning or tags that had either dropped off their birds or the bird had died.
 
-Data was converted to a spatial format (using the sf package) and transformed to a equidistant global projection [(ESPG: 4087)](https://spatialreference.org/ref/epsg/4087/). This projection enables distance calculations as it is known as an equal area projection, hence it provides a more accurate platform on which to compare distance between points on any point on the globe.
+Location data was converted from text to a spatial format (using the sf package) and transformed to a equidistant global projection [(ESPG: 4087)](https://spatialreference.org/ref/epsg/4087/). This projection enables accurate distance calculations as it is an equal area projection, hence distance measurements can be calculated and compared at any point on the globe.
 
 #### 2.2 Identify Stopover Locations
 
-We applied a density based clustering algorith (DBScan) which is used to identify clusters of any shape in data sets that contain noise and outliers ( Ester et al. 1996). The advantage of this method over more traditional clustering (i.e. K-means clustering), is that the number of clusters does not need to be defined aprioir, clusters can be non-circular, and outliers are identified. This is well suited to Red Knot GPS/satellite data which can have multiple stopovers in close proximity and where outliers are expected due to spatial precision variability.
+We applied a density based clustering algorithm (DBScan) to identify clusters of locations or stopoovers ( Ester et al. 1996). The advantage of this method over more traditional clustering (i.e. K-means clustering), is that the number of clusters does not need to be defined aprioir, clusters can be non-circular, and outliers are identified. This is well suited to Red Knot GPS/satellite data which can have multiple stopovers in close proximity and where outliers are expected due to variable spatial precision.
 
 In the example below we show how the dbscan is used to identify clustered locations for one tag (id = 260808) within Delaware Bay. This bird was tagged in Avalon in October 2024.
 
@@ -107,9 +107,9 @@ global <- ggplot(data = Americas) +
 
 ```
 
-We can review the locations for this individual and also calculate the distance between each points. The figure below shows all locations for tag.id = 260808 within the Delaware Bay region.
+We can review the locations for this individual in the Delaware Bay region (Figure 1) and calculate the distance between each points.
 
-```{r, echo = FALSE, fig.align='center', fig.width=5, fig.height=5}
+```{r, echo = FALSE, fig.align='center', fig.cap="Figure 1: GPS locations for tag 260808 within Delaware Bay", fig.width=5, fig.height=5}
 
 # Geographic distributon of tags
 world <- ne_countries(scale = "medium", returnclass = "sf")
@@ -122,7 +122,7 @@ Americas <- world %>%
 global_basic <- ggplot(data = Americas) +
   geom_sf(color = "grey") +
   #geom_sf(data = all_seasons, aes(colour = id), alpha = 0.1, colour = "dark blue") +
-  geom_sf(data = dbisf, , size = 1.2, alpha = 0.6,colour = "dark blue") +
+  geom_sf(data = dbisf,  size = 1.2, alpha = 0.6,colour = "dark blue") +
   xlab("Longitude") + ylab("Latitude") +
   coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
   scale_colour_viridis_c() +
@@ -136,30 +136,36 @@ global_basic
 
 ```
 
-We can quantify the distance between each point and look for obvious thresholds which might help inform the parameters for where we can to set "stopover" clusters. In the figure below we have two thresholds identified, 5000m and 2500m.
+<br>
 
-```{r, echo = FALSE, fig.width = 5, fig.height=4, fig.align='centre'}
+We can measure the distance between each point (m) and plot these values to see if there are clear thresholds. This can help inform our choice of distance (m) in which a point is determined to be within the stopover "cluster" or an outlier. Previous work indicated a threshold of 2500m (2.5 km) distance buffer, however we also tested a broader definition of 5000m. In the figure below the horizontal lines represents the two thresholds 5000m and 2500m.
+
+```{r, echo = FALSE, fig.width = 5, fig.cap= "Figure 2: Distance between points for tag 260808", fig.height=4, fig.align='centre'}
 dbscan::kNNdistplot(data, k =  5)
 abline(h = 5000, lty = 2)
 abline(h = 2500, lty = 2)
 
 ```
 
+<br>
+
 We now run the density clustering algorithm. This requires two input parameters 1) minimum number of points for a cluster and 2) the distance threshold (eps) for points to be considered neighbors.
 
-From a review of the figures above and literature we tested two distance threshold thresholds; 1) 2500m and 2) 5000m. Clusters listed as zero (0) are identified as outliers. We can see in the figure below that a smaller threshold distance results in identification of more clusters. This might be helpful in identifying sub locations within a broader stopover location.
+From a review of the figure 2 and literature we tested two distance thresholds; 1) 2500m and 2) 5000m. Figure 3 shows the result of the two different thresholds. Clusters listed as zero (0) are identified as outliers. We can see in Figure 3 that the smaller threshold distance (2500) results in identification of four clusters. This might be helpful in identifying sub locations within a broader stopover location. Alternatively when a wider threshold if used (5000m) the algorith includes points in a single cluster, or marks them as outliers
 
-```{r fig.height= 6, fig.width=8, echo =FALSE, fig.align='centre'}
+```{r fig.height= 6, fig.width=8, echo =FALSE, fig.align='centre', fig.cap="Figure 3:Identified clusters using threshold values of 2500 (left) and 5000 (right). Colours represent identified clusters" }
 global
 ```
 
-Once we have identified the outliers we can remove these from the dataset resulting in only clustered locations
+<br>
+
+Irrespective of the threshold chosen, we can filter out points identified as outliers to provide a dataset of only stopover locations which forms the basis for our estimate of stopover locations.
 
 <br> <br>
 
 #### 2.3 Kernal Density Estimates (kde)
 
-Kernel Density Estimates (kde) are a popular method to estimate the distribution of data, hence are used to estimate home ranges. Calculations for KDE require consideration of the mathematical method to describe the density function. A detailed description of the parameters can be found [here](http://www.spatialecology.com/gme/kde.htm).
+To better map the stopover areas we can use a kernal density estimate (kde) method to estimate the distribution of locations. Calculations for KDE require consideration of the mathematical method to describe the density function. A detailed description of the parameters can be found [here](http://www.spatialecology.com/gme/kde.htm).
 
 KDEs are very sensitive to input parameters, specifically the bandwidth (h) which determines the [smoothing parameter](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf). H parameters can be estimated using three methods:
 
@@ -177,18 +183,15 @@ Other parameters include:
 
 <br>
 
-We can review some of these various outputs to determine how the variabilites in parameters impact the projected home range for our Red Knot example tag. This is supported by the literature (Hemson et al. 2005; Calenge et al. 2011).
-
-It is also possible to run KDE with set barriers and boundaries.
+We can review the impact of these parameters and different approaches for our Red Knot example tag to assess the impact on the projected stopover range. It is also possible to run KDE with set barriers and boundaries, which may be helpful for defining coastlines.
 
 <br>
 
-#####  kde: h reference parameter
+##### kde - method 1: h reference parameter
 
-We estimate the home range using the "href" metrics. This is determined based on the spread of data. Once the range is calculated (**Utilization distribution of several Animals**) we can extract the vertices or polygons which define the percentage we wish to include. In the figure below we show the 95% threshold in yellow, 75% threshold is blue and 50% threshold is purple. The larger the percent selected the more inclusive the area mapped. 
+We estimate the stopover range using the "href" metrics. This is determined based on the spread of data. Once the range is calculated (**Utilization distribution of several Animals**) we can extract the vertices or polygons which define the percentage we wish to include. In the figure below we show the 95% threshold in yellow, 75% threshold is blue and 50% threshold is purple. The larger the percent selected the more inclusive the area mapped.
 
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 4: KDE estimates using href method. Polygons represnt the 95% threshold in yellow, 75% threshold is blue and 50% threshold is purple"}
 ## Generate kernal density ####
 # library(sf)
 library(mapview)
@@ -198,8 +201,11 @@ library(sp)
 
 # #### 3.1 kde: h reference parameter
 dbisfgeo <- dbisf |>  
+  dplyr::filter(dbisf$cluster_2500 != 0) |> 
+  dplyr::filter(eps == 2500) |> 
   dplyr::select(tag.id) |>
   as("Spatial")
+
 
 # # define the parameters (h, kern, grid, extent) 
 kde_href  <- kernelUD(dbisfgeo, h = "href", kern = c("bivnorm"), grid = 500, extent = 2)
@@ -235,15 +241,13 @@ global_href
  
 ```
 
-
 <br>
 
-##### kde: Least Squares Cross Validation (lscv) method.
+##### kde - method 2: Least Squares Cross Validation (lscv) method.
 
-The Least Square Cross Validation (LSCV) method, which minimizes the difference in volume between the true UD and the estimates UD, reflects a more restricted distribution. There is potential to refine the parameters to tweak these further. 
+The Least Square Cross Validation (LSCV) method, which minimizes the difference in volume between the true UD and the estimates UD, reflects a more restricted distribution. There is potential to refine the parameters to tweak these further.
 
-
-```{r, echo = FALSE,warning=FALSE, message=FALSE}
+```{r, echo = FALSE,warning=FALSE, message=FALSE,"Figure 5: KDE estimates using least-square cross validation method."}
  
 # #### 3.2 kde: Least Squares Cross Validation (lscv) method.
 # 
@@ -254,11 +258,6 @@ ver95ls_sf <- st_as_sf(ver95ls)
  
 ver50ls <- getverticeshr(kde_lscv,50)
 ver50ls_sf <- st_as_sf(ver50ls) 
-
-# plot the outputs 
-#mapview(ver50ls_sf, zcol = "id") 
-#mapview (ver95ls_sf, zcol = "id")
-
 
 # entire north America 
 global_lscv <- ggplot(data = Americas) +
@@ -282,12 +281,11 @@ global_lscv
 
 <br>
 
-##### kde: variable smoothing parameters (h)
+##### kde - method 3: variable smoothing parameters (h)
 
-To test the sensitivity of the h value we can also test a bivariate normal kernel with a variety of smoothing parameters (h = 500, 1000, 3000).
-We can then interpreted visually to determine size to use based on successive trials. This approach is supported by literature (Hemson et al. 2005; Calenge et al. 2011).
+To test the sensitivity of the h value we can also test a bivariate normal kernel with a variety of smoothing parameters (h = 500, 1000, 3000). We can then interpret visually to determine size to use based on successive trials. This approach is supported by literature (Hemson et al. 2005; Calenge et al. 2011).
 
-```{r, echo = FALSE, fig.align='center', fig.width=8, fig.height=5,warning=FALSE, message=FALSE}
+```{r, echo = FALSE, fig.align='center', fig.width=8, fig.height=5,warning=FALSE, message=FALSE, fig.cap="Figure 6: KDE estimates using various h smoothing parameters"}
 
 kde_h1000  <- kernelUD(dbisfgeo, h = 1000, kern = c("bivnorm"), grid = 500,extent = 2)
 kde_h500  <- kernelUD(dbisfgeo, h = 500, kern = c("bivnorm"), grid = 500,extent = 2)
@@ -335,10 +333,8 @@ global
 
 <br>
 
-##### Comparison of kde parameters
-
 ```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.align='center', fig.height=4, fig.width=6}
-
+##### Comparison of kde parameters
 # ## Comparison of kde parameters
 # 
 # Lets rerun the home range by season and compare the methods for the KDE. 
@@ -396,23 +392,369 @@ global <- ggplot(data = Americas) +
   theme(axis.text.x=element_blank(),
         axis.text.y=element_blank())
 
+#global
+
+```
+
+## Questions for discussions
+
+To identify stopover locations we have to decide on which approach best fits the Red Knot stopover behavior and ecology.
+
+-   Distance threshold for stopover locations. Figure 3 show the different clusters identified by using two different distance threshold values. I would suggest sticking with finer scale (2500), as this might be helpful in differentiating sub clusters in the future as needed.
+
+-   Kde smoothing parameter. Based on the testing above I would suggest using a wider smoothing function (h value), then generating the % thresholds as shown in Figure 4. Depending on how tightly you want to refine the stopover locations we can calculate the stopover location and then use a standard threshold to narrow down the area used. An example is show in Figure 7 below. In this figure we use a href approach with various % thresholds (50%, 65%, 75%, 85%,and 95% ) to illustrate the variability.
+
+```{r, echo = FALSE, message = FALSE, fig.align = "center", warning=FALSE, fig.cap="Figure 7: KDE estimates using href smoothing and various percent thresholds" }
+dbisfgeosf <- st_as_sf(dbisfgeo)
+
+# # define the parameters (h, kern, grid, extent) 
+kde_href  <- kernelUD(dbisfgeo, h = "href", kern = c("bivnorm"), grid = 500, extent = 2)
+
+ ver95 <- getverticeshr(kde_href,95) # get vertices for home range
+ ver95_sf <- st_as_sf(ver95) |> 
+   mutate(th = 95)        # convert to sf object 
+ 
+ ver85 <- getverticeshr(kde_href,85)
+ ver85_sf <- st_as_sf(ver85 )|> 
+   mutate(th = 85)
+   
+ ver75 <- getverticeshr(kde_href,75)
+ ver75_sf <- st_as_sf(ver75 )|> 
+   mutate(th = 75)
+   
+ ver65 <- getverticeshr(kde_href,65)
+ ver65_sf <- st_as_sf(ver65 )|> 
+   mutate(th = 65)
+ 
+ ver50 <- getverticeshr(kde_href,50)
+ ver50_sf<- st_as_sf(ver50) |> 
+   mutate(th = 50)
+  
+ allvers<- bind_rows( ver95_sf,ver85_sf, ver75_sf , ver65_sf, ver50_sf)
+ 
+ # entire north America 
+global_href <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = dbisfgeosf, , size = 1, alpha = 0.2,colour = "blue") +
+  geom_sf(data = allvers, linewidth = 0.5, alpha = 0.4, fill = "red")+
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-75.2, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
+  theme_bw()+
+  facet_wrap(~th)+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_href
+ 
+```
+
+### 4. Multiple individuals 
+
+We can apply these methods to multiple individuals to assess density of stopover locations within Delaware Bay.
+
+
+```{r, echo = TRUE}
+
+## up to here!!!!!
+
+# read in del birds 
+
+del_birds <- st_read(path("01_raw_data", "del_birds.gpkg"))
+
+db_sum <- del_birds |> 
+  st_drop_geometry() |> 
+  group_by(tag.id) |> 
+  summarise(n = n()) |> 
+  arrange(n)
+
+#hist(db_sum$n, breaks = 25)
+
+# filter where less than 10 points within aoi
+db_tagids <- db_sum |> 
+  filter(n > 10) |> 
+  pull(tag.id)
+
+
+#####################################
+## 1: Use db scan to remove outliers based on month and tag id. 
+
+db <- del_birds |> filter(tag.id %in% db_tagids) 
+db <- st_transform(db, crs = 4087)
+db <- cbind(db, st_coordinates(db))
+
+#plot(db$year, db$month)
+#hist(db$month)
+
+db <- db |>
+  st_drop_geometry() |> 
+  select(tag.id,year, month, day, X, Y)
+
+dbsf <- st_as_sf(db, coords = c("X", "Y"), crs = 4087)
+
+# make list of tags by month 
+#tagls <- unique(db$tag.id)
+taglsm <- db |> select(tag.id, month, day) |> unique()
+taglsm <- taglsm |> mutate(id = seq(1:length(taglsm$tag.id)))
+
+
+# # identify the stopover locations 
+# 
+# all_pts <- purrr::map(taglsm$id, function(x){
+#   
+#   #x = taglsm$id[63]  
+#   taglsmi <- taglsm[x,]
+#   
+#   dbi <- db |> 
+#     filter(tag.id == taglsmi$tag.id) |> 
+#     filter(month == taglsmi$month)
+#     
+#   dbixy <- dbi |> select(X,Y)
+#   
+#   dbs <- dbscan(dbixy, 2500, MinPts = 5)
+#   #plot(dbs, dbixy, main = "DBSCAN", frame = FALSE)
+#   dbi$cluster <- dbs$cluster
+#   dbisf <- st_as_sf(dbi, coords = c("X", "Y"), crs = 4087)
+#   dbisf <- dbisf |> filter(cluster !=0)
+#   
+# }) |> bind_rows()
+# 
+# st_write(all_pts, path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
+# 
+
+
+all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
+# pts with remove the outlier points 
+
+# # # Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+Americas <- world %>%
+   dplyr::filter(region_un == "Americas")%>%
+   select(admin)
+ 
+# entire north America
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = dbsf, size = 1.2, alpha = 0.4, col = "darkgrey") +
+  geom_sf(data = all_pts, size = 1.2, alpha = 0.2, col = "blue") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
+  scale_colour_viridis_c() +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
 global
+
+
+#####################################################
+## Part 2: generate the polygons based on the stopover locations without outliers
+
+all_pts<- cbind(all_pts, st_coordinates(all_pts))
+
+# convert to sp object
+all_pts_sp <- all_pts|> 
+  as("Spatial") 
+
+all_pts <- all_pts |> st_drop_geometry()
+
+taglsm <- all_pts |> select(tag.id, month) |> unique()
+
+taglsm <- taglsm |> mutate(id = seq(1:length(taglsm$tag.id)))
+
+#taglsm <- taglsm[1:3]
+
+# loop through the combinations of month and year and id 
+all_poly <- purrr::map(taglsm$id, function(x){
+  
+  #print(x)
+  #x = taglsm$id[5]  
+  taglsmi <- taglsm[x,]
+  
+  dbi <- all_pts |> 
+    filter(tag.id == taglsmi$tag.id) |> 
+    filter(month == taglsmi$month) 
+  
+  #  kde: h reference parameter
+  dbisf <- st_as_sf(dbi, coords = c("X", "Y"), crs = 4087)
+  
+  dbisp <- dbisf |> 
+    select(tag.id) |> 
+    as("Spatial")
+  
+  # # define the parameters (h, kern, grid, extent) 
+  kde_href  <- kernelUD(dbisp, h = "href", kern = c("bivnorm"), grid = 500, extent = 2)
+  
+  # add a try statement to skip to next line if error is produced in vers95
+  
+  ver95_sf <- tryCatch({
+    ver95 <- getverticeshr(kde_href,95) # get vertices for home range
+    st_as_sf(ver95) |> 
+      mutate(th = 95)        # convert to sf object 
+  }, error = function(e) {
+    return(NULL) # return NULL if error occurs
+  })
+  
+  ver75_sf <- tryCatch({
+    ver75 <- getverticeshr(kde_href,75)
+    st_as_sf(ver75 )|> 
+      mutate(th = 75)
+  }, error = function(e) {
+    return(NULL) # return NULL if error occurs
+  })
+  
+  ver50_sf <- tryCatch({
+    ver50 <- getverticeshr(kde_href,50)
+    st_as_sf(ver50) |> 
+      mutate(th = 50)
+  }, error = function(e) {
+    return(NULL) # return NULL if error occurs
+  })
+  
+  # if it is not null the bind 
+  if(!is.null(ver95_sf) & !is.null(ver75_sf) & !is.null(ver50_sf)) {
+    allvers <- bind_rows( ver95_sf, ver75_sf , ver50_sf)
+    allvers$month = unique(dbi$month)
+    allvers$year = unique(dbi$year)
+    
+    return(allvers)
+  }
+  
+}) |> bind_rows()
+
+st_write(all_poly, path("01_raw_data", "Del_birds_month_yr_polygons.gpkg"))
+
+
+
+
+## Summarise the dataset by tag id and no of months 
+## how many birds have more than 1 year and more than one month 
+
+all_polys <- st_read(path("01_raw_data", "Del_birds_month_yr_polygons.gpkg"))
+
+all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
+
+summary_db <- all_polys |> 
+  st_drop_geometry() |> 
+  group_by(id) |> 
+  summarise(n_months = n_distinct(month),
+            n_years = n_distinct(year)) 
+
+
+## note we can filter this down to 50% percentage 
+
+all_poly_50 <- all_polys |> filter(th == 50)
+
+# ggplot 
+
+global_href <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  #geom_sf(data = dbsf,  size = 1, alpha = 0.2,colour = "blue") +
+  geom_sf(data = all_pts,  size = 1, alpha = 0.2,colour = "lightblue") +
+  #geom_sf(data = all_poly_50, linewidth = 0.5, alpha = 0.4, fill = "red")+
+  geom_sf(data = all_poly_50,  alpha = 0.4,fill = "red")+
+  xlab("Longitude") + ylab("Latitude") +
+  #coord_sf(xlim = c(-75, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  theme_bw()+
+  facet_wrap(~month)+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_href
+
+
+
+
+
+
+
+
+###################################################
+## Part 3: Calculate a density plots using points. 
+
+##################################################
+# # filter so that all points are the same density 
+
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(ggpointdensity)
+library(ggspatial) # For base maps
+
+all_pts <- st_read(path("01_raw_data", "Del_birds_month_yr_pts.gpkg"))
+
+all_pts<- cbind(all_pts, st_coordinates(all_pts))
+
+all_pts_density <- all_pts|> group_by(tag.id, year, month, day) |>
+  slice_head(n = 1) |> 
+  ungroup() 
+
+ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
+  geom_pointdensity() +
+  scale_color_viridis()+
+  theme_bw()
+
+ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
+  geom_pointdensity() +
+  annotation_map_tile(type = "osm") +
+  scale_color_viridis()+
+  facet_wrap( ~ month ) 
+
+
+ggplot(data = all_pts, mapping = aes(x = X, y = Y)) +
+  geom_bin2d()+
+  #annotation_map_tile(type = "osm") +
+  scale_color_viridis()+
+  facet_wrap( ~ month ) 
+
+
+
+## Testing map 1 
+
+ggplot(all_pts) +
+  stat_density_2d(aes(x = st_coordinates(all_pts)[,1],
+                      y = st_coordinates(all_pts)[,2]),
+                  geom = "polygon") +
+  scale_fill_viridis_c() +
+  labs(title = "Spatial Point Density", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+# Testing map 2
+
+global_href <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  #geom_sf(data = dbsf,  size = 1, alpha = 0.2,colour = "blue") +
+  #geom_sf(data = all_pts,  size = 1, alpha = 0.2,colour = "lightblue") +
+  geom_pointdensity(all_pts, mapping = aes(x = X, y = Y)) +
+  
+  #geom_sf(data = all_poly_50,  alpha = 0.4,fill = "red")+
+  xlab("Longitude") + ylab("Latitude") +
+  #coord_sf(xlim = c(-75, -74.35), ylim = c(38.8, 39.4), expand = FALSE)+
+  coord_sf(xlim = c(-76, -74), ylim = c(38, 40), expand = FALSE)+
+  theme_bw()+
+  facet_wrap(~month)+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+global_href
 
 ```
 
 
-## Questions for discussions
-
-1)  For identification of clusters (DBScan) are you happy to use the 2.5km threshold or any reason to be finer or coarser scale. Note: we have the option to remove locations with poor accuracy metrics.
 
 
 
-# 
-# ### References
-# 
-# -   Packages: Estimate Kernel home range Utilization Distribution Using adehabitatHR [(Calenge et al. 2011)](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf)
-# -   [KDE]("http://www.spatialecology.com/gme/kde.htm")
-# -   https://www.ckwri.tamuk.edu/sites/default/files/publication/pdfs/2017/leonard_analyzing_wildlife_telemetry_data_in_r.pdf
-# -   Seaman, D. E., Millspaugh, J. J., Kernohan, B. J., Brundige, G. C., Raedeke, K. J., & Gitzen, R. A. (1999). Effects of sample #size on kernel home range estimates. The journal of wildlife management, 739-747.
-# -   Kernohan, B. J., R. A. Gitzen, and J. J. Millspaugh. 2001. Analysis of animal space use and movements. Pages 125--166 in J. J. #Millspaugh and J. M. Marzluff, editors. Radio tracking and animal populations. Academic Press, San Diego, CA, USA
-# -   Hemson, G., Johnson, P., South, A., Kenward, R., Ripley, R., & MACDONALD, D. (2005). Are kernels the mustard? Data from global positioning system (GPS) collars suggests problems for kernel home‐range analyses with least‐squares cross‐validation. Journal of Animal Ecology, 74(3), 455-463
+
+
+### References
+
+-   Packages: Estimate Kernel home range Utilization Distribution Using adehabitatHR [(Calenge et al. 2011)](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf)
+
+-   [KDE](%22http://www.spatialecology.com/gme/kde.htm%22)
+
+-   https://www.ckwri.tamuk.edu/sites/default/files/publication/pdfs/2017/leonard_analyzing_wildlife_telemetry_data_in_r.pdf
+
+-   Seaman, D. E., Millspaugh, J. J., Kernohan, B. J., Brundige, G. C., Raedeke, K. J., & Gitzen, R. A. (1999). Effects of sample #size on kernel home range estimates. The journal of wildlife management, 739-747.
+
+-   Kernohan, B. J., R. A. Gitzen, and J. J. Millspaugh. 2001. Analysis of animal space use and movements. Pages 125--166 in J. J. #Millspaugh and J. M. Marzluff, editors. Radio tracking and animal populations. Academic Press, San Diego, CA, USA
+
+-   Hemson, G., Johnson, P., South, A., Kenward, R., Ripley, R., & MACDONALD, D. (2005). Are kernels the mustard? Data from global positioning system (GPS) collars suggests problems for kernel home‐range analyses with least‐squares cross‐validation. Journal of Animal Ecology, 74(3), 455-463

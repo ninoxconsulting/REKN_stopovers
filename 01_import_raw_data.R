@@ -44,7 +44,7 @@ rloc <- rloc |>
 
 
 
-## TODO: could possiblely filter by accuracy levels here
+## TODO: could possible filter by accuracy levels here
 
 
 
@@ -60,6 +60,9 @@ rr <- rloc |>
 
 
 rrsf <- st_as_sf(rr, coords = c("location.long", "location.lat"), crs = 4326)
+
+
+
 
 
 
@@ -90,14 +93,12 @@ db_tagids <- db_sum |>
   pull(tag.id)
 
 
-
 #####################################
 
 ## try db scan 
 db <- del_birds |> filter(tag.id %in% db_tagids) 
 #db <- rrsf |>  filter(tag.id == 260808) 
 db <- st_transform(db, crs = 4087)
-db <- cbind(db, st_coordinates(db))
 
 db <- db |>
   st_drop_geometry() |> 
@@ -134,9 +135,6 @@ abline(h = 5000, lty = 2)
 abline(h = 2500, lty = 2)
 
 
-
-
-
 ## Remove the points that are outside the main clusters 
 ## add the cluster number back to full dataset and filter out
 
@@ -169,11 +167,6 @@ global <- ggplot(data = Americas) +
 
 
 global
-
-
-
-
-
 
 
 

@@ -4,11 +4,8 @@ library(fs)
 library(dplyr)
 library(sf)
 library(lubridate)
-
 library("rnaturalearth")
 library("rnaturalearthdata")
-#install.packages("fpc")
-#install.packages("dbscan")
 library(fpc)
 library(dbscan)
 
@@ -35,17 +32,42 @@ rufa_ids <- ts |>
 rloc <- loc |> 
   filter(tag.id %in% rufa_ids)
 
+# temp write out
+rrloc <- st_as_sf(rloc, coords = c("location.long", "location.lat"), crs = 4326)
+rrloc <- rrloc |> 
+  select(tag.id, date_time,year, month,  day ) 
+
+st_write(rrloc, path("01_raw_data", "all_raw_rufa_pts.gpkg"), append = FALSE)
+
+ ## Filter by accuracy levels 
+# unique(rloc$gps.fix.type.raw)
+# unique(rloc$argos.lc)
+# 
+# rloc |> 
+#   group_by(gps.fix.type.raw) |> 
+#   summarise(n = n()) |> 
+#   arrange(n)
+# 
+# rloc |> 
+#   group_by(argos.lc) |> 
+#   summarise(n = n()) |> 
+#   arrange(n)
+
+# drop z, A, B, 0 and keep the remaining 
+rloc <- rloc |> 
+  filter(argos.lc %in% c("3", "2", "1", NA)) 
+  
+## keeping the lotek.crc.status or G (good) or C/F corrected or fixed
+# rloc |> 
+#   group_by(argos.lc, lotek.crc.status, gps.fix.type.raw) |> 
+#   summarise(n = n()) |> 
+#   arrange(n)
+
 
 # create an id number to link back spatial datasets 
 
-#names(rloc)
 rloc <- rloc |> 
   mutate(id_order = seq(1,length(rloc$tag.id),1))
-
-
-
-## TODO: could possible filter by accuracy levels here
-
 
 
 # subset only the cols of interest as first pass
@@ -60,6 +82,95 @@ rr <- rloc |>
 
 
 rrsf <- st_as_sf(rr, coords = c("location.long", "location.lat"), crs = 4326)
+
+# get summary of no of birds 
+
+no.birds <- rrsf |> 
+  group_by(tag.id) |>
+  summarise(n = n()) 
+
+low_count_birds <- no.birds |> 
+  filter(n < 10) |> 
+  pull(tag.id)
+
+# filter birds which have less than 10 points? (this might need to be higher?)
+rrsf <- rrsf |> 
+  filter(tag.id %in% low_count_birds == FALSE) 
+
+# add cocordinates as columns for dbscan
+rrsf <- cbind(rrsf, st_coordinates(rrsf))
+
+
+st_write(rrsf, path("02_clean_data", "high_accuracy_raw_rufa_pts.gpkg"), append = FALSE)
+
+
+# skip to second script
+
+
+
+
+
+##########################################################################
+## Generate a few files with the tag_id to test QGIS
+
+
+rrsf <- st_read(path("02_clean_data", "high_accuracy_raw_rufa_pts.gpkg"))
+
+rrsf <- rrsf|>
+  dplyr::select(tag.id, X, Y,date_time) |> 
+  dplyr::mutate(timestamp = as.POSIXct(date_time)) |> 
+  dplyr::select(-date_time) 
+
+rrsf <- st_transform(rrsf, crs = 4087)
+tags <- unique(rrsf$tag.id)
+tags <- tags[50:80] # just test with the first 10 tags for now.
+
+# write out a csv for each tag id to test in QGIS
+for (i in 1:length(tags)) {
+  tag_i <- tags[i]
+  
+  rrsf_i <- rrsf |> 
+    filter(tag.id == tag_i) #|> 
+    #st_drop_geometry() |> 
+    #select(tag.id, X, Y, date_time)
+  
+  st_write(rrsf_i, path("01_raw_data", paste0("tag_", tag_i, "_locations.gpkg")), append = FALSE)
+  
+}
+
+
+
+
+
+## transform to equal area projections 
+# projections with equal area distance metrics. 
+# In this case testing the Plate Carree https://epsg.io/32663 EPSG:4087
+# EPSG:32662 is deprecated. 
+
+db <- st_transform(rrsf, crs = 4087)
+
+db <- db |>
+  dplyr::select(tag.id, X, Y,date_time) |> 
+  dplyr::mutate(timestamp = as.POSIXct(date_time)) |> 
+  dplyr::select(-date_time) |> 
+  st_drop_geometry()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -125,6 +236,8 @@ eps = 2500 # distance threshold in meters (adjust as needed)
 #https://www.sthda.com/english/wiki/wiki.php?id_contents=7940
 
 dbs <- dbscan(data, eps, MinPts = 5)
+
+
 #method = c("hybrid", "raw", "dist")
 
 plot(dbs, data, main = "DBSCAN", frame = FALSE)

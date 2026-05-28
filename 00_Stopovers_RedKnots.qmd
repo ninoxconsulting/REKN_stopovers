@@ -1,0 +1,391 @@
+---
+title: "Red Knot stopover locations (2020-2025)"
+format: docx
+editor: visual
+---
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+
+library(fs)
+library(dplyr)
+library(sf)
+library(lubridate)
+library("rnaturalearth")
+library("rnaturalearthdata")
+library(fpc)
+library(dbscan)
+library(ggplot2)
+library(adehabitatHR)
+library(sp)
+library(viridisLite)
+library(ggpointdensity)
+library(ggspatial) # For base maps
+
+```
+<br>
+
+To better understand Red Knot migration and stopover locations we used high precision GPS data locations to identify and characterize stopovers along migration routes. Following initial testing of stopover analysis at Delaware Bay, we expanded the methodology to cover the entire range of Red Knots.
+
+<br>
+
+
+### 1.GPS/satellite data
+
+Location and deployment data was obtained from 300 individual Red Knot *rufa* *subspecies*. This data was reviewed to remove spatial outliers and erroneous locations, such as those well beyond the flight path of the individual. Data filtering and QA was completed using [R coding](https://github.com/ninoxconsulting/REKN_gps) and QGIS (version 3.28.11).
+
+<br>
+
+### 2. Stopover Methodology
+
+To identify stopover locations, initial testing conducted by Theo Diehl and Stephanie Feigin, was expanded to develop a standardized and repeatable methodology. This would facilitate a transparent method which could be applied to all available GPS tagged indviduals.
+
+#### 2.1 GPS data pre processing
+
+All GPS/satellite data was downloaded in .csv format along with detailed deployment data. This was previously compiled by G.Perkins as part of ongoing work with US F&W.
+
+Data was filtered to include only the highest accuracy locations (argos location category of 3,2,1) and limited to individuals from rufa subpopulations who had recorded a movement away from their initial deployment location. This reduced the error from very short-lived tags, tags that were malfunctioning or tags that had either dropped off their birds or the bird had died.
+
+Location data was converted from text to a spatial format (using the sf package) and transformed to a equidistant global projection [(ESPG: 4087)](https://spatialreference.org/ref/epsg/4087/). This projection enables accurate distance calculations as it is an equal area projection, hence distance measurements can be calculated and compared at any point on the globe.
+
+#### 2.2 Identify Stopover Clusters
+
+I used a density based clustering algorithm (DBScan) to identify clusters of locations or stopovers ( Ester et al. 1996). The advantage of this method over more traditional clustering (i.e. K-means clustering), is that the number of clusters does not need to be defined apriori, clusters can be non-circular, and outliers are identified. This is well suited to Red Knot GPS/satellite data which can have multiple stopovers in close proximity and where outliers are expected due to variable spatial precision.
+
+In the preliminary testing at Delaware Bay, we were able to define a specific threshold by which points were considered part of a cluster (i.e 2500m and 5000m). Unfortunately when applied to the entire data set the resulting clusters were very large and confounded temporal stopovers. To overcome these limitations, I tested alternate methods (hierarchical HBCSCAN and spatio-temporal dbscan clustering) methods and compared these results with outputs from QGIS. While the QGIS method was helpful for visual review, it was not repeatable over the 300 or more individual birds.
+
+From these tests, hierarchical HDBSCAN method was the best fit to identify and distinguish clusters on time and space across the entire range. After the hierarchical DBScan algorithm was run for each bird, I manually reviewed all clusters were edited clusters to ensure temporal variability was captured. I used a minimum of 5 points within a 2500m redius as a basis to QA/QC clusters. The output of this process assigned a cluster ID number to all points within a given cluster and identified non-stopover locations as outliers. 
+
+The figure below shows all Red Knot GPS locations (n = 300) across the Americas following the clustering algorithm. The green points represent locations which were identified as stopover clusters while the blue points represent outliers or point where birds were in transit.
+
+```{r, echo = FALSE, warning=FALSE, message = FALSE, fig.align='center', fig.cap="Figure 1: GPS locations clusters across the Red Knot Range (2021-2025). Green points represent stopover locations and blue points represent points when the individual was in transit", fig.width=5, fig.height=5}
+
+pt <- st_read(path("02_clean_data", "pts_edited_hdscan.gpkg"), quiet = TRUE) 
+pt <- st_transform(pt, crs = 4087)
+
+dbisf <- pt|>
+  mutate(cluster_edit_col = ifelse(cluster_edit == 0, 0,1)) 
+
+# Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+Americas <- world %>% 
+  dplyr::filter(region_un == "Americas")%>% 
+  select(admin)
+
+# # entire north America 
+global <- ggplot(data = Americas) +
+   geom_sf(color = "grey") +
+   geom_sf(data = dbisf, aes(color = as.factor(cluster_edit_col)), size = 1.2, alpha = 0.1) + #, color = "dark blue") +
+   xlab("Longitude") + ylab("Latitude") +
+   coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+   scale_colour_viridis_d(begin = 0.2, end = 0.7) +
+   theme_bw()+
+   theme(axis.text.x=element_blank(),
+         axis.text.y=element_blank(),
+         legend.position = "none")
+ 
+global
+
+```
+<br>
+<br>
+
+#### 2.3 Stopover Locations: Kernel Density Estimates (kde)
+
+Once the clusters were finalized, I used a kernel density estimate (kde) method to estimate the **"utilisation distribution"** for each stopover cluster by individual. Calculations for KDE require consideration of the mathematical method to describe the density function. A detailed description of the parameters can be found [here](http://www.spatialecology.com/gme/kde.htm).
+
+Based on initial testing from the Delaware Bay site, I used the "href" method and calculated the 50%, 75% and 95% thresholds to define the stopover range. In this case the 50% threshold represents the core area used while the 95% represents a wider more inclusive estimate. This method provided a more inclusive overall estimate of stopover locations as compared to methods using minimum convex polygon or the least-square cross validation (LSCV) method.
+
+A minimum of five points were needed to estimate a home range, hence only clusters with 5 or more points were included in the KDE estimates.
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 2: KDE estimates using href method for all individuals (n = 274)"}
+
+## Generate kernal density ####
+all_polys <- st_read(path("03_kde", "tagid_cluster_polygons_20260525.gpkg"), quiet = TRUE)
+
+# Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+Americas <- world %>% 
+  dplyr::filter(region_un == "Americas")%>% 
+  select(admin)
+
+# # entire north America 
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = all_polys, size = 1.2, alpha = 0.1, color = "dark blue") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.7) +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = "none")
+
+global
+
+```
+
+In addition to overall distribution of stopovers locations, we compared how stopovers varied over time. The figure below identified stopover polygons based on the birds month of arrival month. Note this includes multiple year and only shows the arrival month rather than the full stopover period.
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 3: KDE estimates using href method shown per month of stopover arrival (50% threshold)", fig.width=8, fig.height=8}
+
+## All polys by month 
+th50 <- all_polys |> filter(th == 50)
+
+# # entire north America 
+global_month <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = th50, size = 2, alpha = 0.1, color = "dark blue") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.7) +
+  facet_wrap(~min_month)+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = "none")
+
+global_month
+ 
+```
+
+<br>
+
+The final stopover analysis contained 274 individual birds. 
+
+```{r, eval = FALSE, echo = FALSE, warning=FALSE, message=FALSE, fig.width=5, fig.height=7}
+
+data_dir <- "C:\\Users\\genev\\OneDrive\\Documents\\02.Contracts\\2022_NWRC\\02_data\\REKN_gps\\output_final\\draft_outputs_2026\\"
+
+ts <- read.csv(fs::path(data_dir,"final_tags_list_edited_20260126.csv"))
+
+all_polys <- st_read(path("03_kde", "tagid_cluster_polygons_20260525.gpkg"), quiet = TRUE)
+
+# summarise all the polygons
+summary_db <- all_polys |> 
+  select(id) |> 
+  st_drop_geometry() |> 
+  unique() 
+  
+tss <- ts |> 
+  filter(tag.id  %in% summary_db$id) |> 
+  select(tag.id,  proj) |> 
+  group_by(proj) |>
+  summarise(n_tags = n_distinct(tag.id))
+  
+knitr::kable(tss)
+
+```
+
+We can see in the figure below that most individuals recorded only one or two stopovers with a single bird recording up to 8 separate stopovers. 
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 4: Number of stopovers recorded per bird (n  = 274).", fig.width=4, fig.height=4}
+
+# summarise all the polygons
+summary_db <- all_polys |> 
+  st_drop_geometry() |> 
+  group_by(id) |> 
+  summarise(n_months = n_distinct(min_month),
+            n_years = n_distinct(min_yr)) 
+
+# 274 individuals 
+# summary of how many polygons per id
+summary_db2 <- summary_db |> 
+  st_drop_geometry() |> 
+  group_by(n_months, n_years) |> 
+  summarise(n_ids = n_distinct(id))
+
+#plot summary by no of ids
+summary_db2 |> 
+  ggplot(aes(summary_db2, x = n_months, y = n_ids)) +
+  geom_col(position = "dodge") +
+  theme_bw() +
+  #facet_grid(n_years ~ .) +
+  xlab("Number of stopovers") +
+  ylab("Number of individuals") +
+  ggtitle("Summary of number of stopovers")
+
+```
+
+<br>
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 5: Number of stopovers by arrival month and year (n  = 274).", fig.width=5, fig.height=7}
+
+# plot summary by month 
+summary_month <- all_polys |> 
+  st_drop_geometry() |> 
+  group_by(min_month,min_yr) |> 
+  summarise(n_ids = n_distinct(id))
+            
+
+#plot summary by no of ids
+summary_month |> 
+  ggplot(aes(summary_month, x = as.factor(min_month), y = n_ids)) +
+  geom_col(position = "dodge") +
+  theme_bw() +
+  facet_grid(min_yr ~ .) +
+  xlab("Month in which stopover began") +
+  ylab("Number of individuals") +
+  ggtitle("Summary of stopovers per month")
+
+```
+
+
+<br>
+<br>
+
+### 3. Common stopover locations 
+
+In addition to the polygons for each individual and each stopover, we can also summarize density metrics. 
+
+For example, we can estimate the use of common stopover locations based on the number of overlapping stopover polygons. In the figure below we summarized the number of overlapping core area polygons (50% kde threshold) for all individuals over all years. Due to the large global distribution we built a 25 km hex grid on which the number of overlaps was summed.  
+
+```{r,  echo = FALSE, fig.align='center', fig.cap="Figure 6: Polygon density for 274 tags using 50% threshold kde. Grey points are identified as outliers using density scan algorith per bird. Blue points are identified within the key stopovers", message=FALSE, warning=FALSE}
+hex <- st_read( path("03_kde", "hex_50_polywt_20260527.gpkg"), quiet = TRUE)
+hex$n_overlap[hex$n_overlap == 0] <- NA
+
+ # entire north America 
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = hex, aes(fill = n_overlap), color = NA) +
+  xlab("Longitude") + ylab("Latitude") +
+  #coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
+  coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+  scale_fill_viridis_c(na.value = "transparent") +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = "none")
+
+global
+```
+
+To better visualize the results we used Delaware Bay as a test case. 
+
+<br>
+
+#### 3.1 Example Stopover Location: Delaware Bay
+
+We can plot the overlapping polygons (stopover ranges) for Delaware Bay for all tags and months combined. 
+
+```{r, echo = FALSE, fig.align='center', fig.cap="Figure 7: Stopver kde estimates for the Delaware Bay region at various thresholds (50, 65, 75, 95%). Each colour represents an individual", message=FALSE, warning=FALSE}
+## Generate kernal density ####
+all_polys <- st_read(path("03_kde", "tagid_cluster_polygons_20260525.gpkg"), quiet = TRUE)
+
+# # # Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+Americas <- world %>%
+   dplyr::filter(region_un == "Americas")%>%
+   select(admin)
+ 
+
+# # entire north America 
+global <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = all_polys, aes(fill = id), size = 0.1, alpha = 0.3) +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
+ # coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+  #scale_fill_viridis_d(begin = 0.2, end = 0.7) +
+  facet_wrap(~th)+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = "none")
+
+global
+
+```
+
+Alternatively we can summarise various density measures, such as number of overlapping polygons, or number of weighted overlapping polygons, where a higher score is assigned to the core areas (50% threshold) .   
+
+
+```{r, echo = FALSE,fig.cap="Figure 8: Number of overlapping stopover polygons by month. The lighter the colour the higher number of overlap", message=FALSE, warning=FALSE}
+
+monthly_hex <- st_read( path("03_kde", "hex_all_monthly_long_20260527.gpkg"), quiet = TRUE)
+
+del_birds <- st_read(path("01_raw_data", "Del_birds_polygons.gpkg"), quiet = TRUE)
+aoi <- st_as_sfc(
+  st_bbox(del_birds),
+    crs = st_crs(monthly_hex)
+  )
+aoi <- st_buffer(aoi, 500000)
+
+# filter to AOI area 
+hex <- monthly_hex[lengths(st_intersects(monthly_hex, aoi)) > 0,]
+hex$n_overlap[hex$n_overlap == 0] <- NA
+
+
+# delaware region 
+p1<- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = hex, aes(fill = n_overlap, alpha = 0.2), color = NA) +
+  xlab("Longitude") + ylab("Latitude") +
+ # coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+   coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
+ # coord_sf(xlim = c(-78, -72), ylim = c(36, 41), expand = FALSE)+
+  scale_fill_viridis_c(na.value = "transparent") +
+  facet_wrap(~month)+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = "none")
+
+p1
+
+```
+
+<br>
+
+
+```{r, eval = FALSE, echo = FALSE,fig.cap="Figure 9: Stopver kde estimates for the Delaware Bay region at various thresholds. Each colour represents an individual", message=FALSE, warning=FALSE}
+
+# filter to AOI area 
+hex <- monthly_hex[lengths(st_intersects(monthly_hex, aoi)) > 0,]
+hex$ud[hex$ud == 0] <- NA
+
+# delaware region 
+p2 <- ggplot(data = Americas) +
+  geom_sf(color = "grey") +
+  geom_sf(data = hex, aes(fill = ud, alpha = 0.2), color = NA) +
+  xlab("Longitude") + ylab("Latitude") +
+   coord_sf(xlim = c(-76, -73.5), ylim = c(38, 40.5), expand = FALSE)+
+ # coord_sf(xlim = c(-78, -72), ylim = c(36, 41), expand = FALSE)+
+  scale_fill_viridis_c(na.value = "transparent") +
+  facet_wrap(~month)+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = "none")
+
+p2
+
+```
+
+<br>
+<br>
+
+
+
+## 6. Outputs 
+
+From this analysis we generated a comprehensive set of stopover locations for 274 individual Red Knots across the American continent. This includes spatial polygons for each stopover with varying levels of use (50, 65, 75, 95%), along with density metrics calculating number of overlapping stopover areas and a weighted density measures. 
+
+
+<br>
+<br>
+
+### References
+
+-   Packages: Estimate Kernel home range Utilization Distribution Using adehabitatHR [(Calenge et al. 2011)](https://cran.r-project.org/web/packages/adehabitatHR/vignettes/adehabitatHR.pdf)
+
+-   [KDE](%22http://www.spatialecology.com/gme/kde.htm%22)
+
+-   https://www.ckwri.tamuk.edu/sites/default/files/publication/pdfs/2017/leonard_analyzing_wildlife_telemetry_data_in_r.pdf
+
+-   Seaman, D. E., Millspaugh, J. J., Kernohan, B. J., Brundige, G. C., Raedeke, K. J., & Gitzen, R. A. (1999). Effects of sample #size on kernel home range estimates. The journal of wildlife management, 739-747.
+
+-   Kernohan, B. J., R. A. Gitzen, and J. J. Millspaugh. 2001. Analysis of animal space use and movements. Pages 125--166 in J. J. #Millspaugh and J. M. Marzluff, editors. Radio tracking and animal populations. Academic Press, San Diego, CA, USA
+
+-   Hemson, G., Johnson, P., South, A., Kenward, R., Ripley, R., & MACDONALD, D. (2005). Are kernels the mustard? Data from global positioning system (GPS) collars suggests problems for kernel home‐range analyses with least‐squares cross‐validation. Journal of Animal Ecology, 74(3), 455-463

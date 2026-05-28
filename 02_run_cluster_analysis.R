@@ -2,7 +2,7 @@
 #2500
 #5000
 
-# dpendant on the output of script (01_import_data.R) 
+# dependant on the output of script (01_import_data.R) 
 # this is the filtered dataset by accuracy level and min number 
 
 library(fs)
@@ -131,10 +131,40 @@ st_write(pt, path("02_clean_data", "pts_edited_hdscan.gpkg"), delete_dsn = TRUE)
                    
 
 
+##############################################################################
+# plot all points 
 
+library("rnaturalearth")
+library("rnaturalearthdata")
 
+pt <- st_read(path("02_clean_data", "pts_edited_hdscan.gpkg"))
+pt <- st_transform(pt, crs = 4087)
 
+dbisf <- pt|>
+  mutate(cluster_edit_col = ifelse(cluster_edit == 0, 0,1)) 
+   #filter(cluster_edit !=0)
+# plot(dbisf)
 
+# Geographic distributon of tags
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+Americas <- world %>% 
+  dplyr::filter(region_un == "Americas")%>% 
+  select(admin)
+
+# # entire north America 
+global <- ggplot(data = Americas) +
+   geom_sf(color = "grey") +
+   geom_sf(data = dbisf, aes(color = as.factor(cluster_edit_col)), size = 1.2, alpha = 0.1) + #, color = "dark blue") +
+   xlab("Longitude") + ylab("Latitude") +
+   coord_sf(xlim = c(-130, -30), ylim = c(-60, 80), expand = FALSE)+
+   scale_colour_viridis_d(begin = 0.2, end = 0.7) +
+   theme_bw()+
+   theme(axis.text.x=element_blank(),
+         axis.text.y=element_blank(),
+         legend.position = "none")
+ 
+global
 
 
 
